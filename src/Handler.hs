@@ -40,7 +40,7 @@ response _ = do
         (_     , Left _ ) -> Effect.logError "post failed"
         (_     , Right v) -> Effect.logInfo (showText v)
 
-    cabal <- Effect.readFile "api.cabal"
+    cabal <- Effect.readFile "free-server.cabal"
     case cabal of
         Left err ->
             pure . plain500 $ ("error opening cabal file: " <> showText err)
