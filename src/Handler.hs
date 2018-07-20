@@ -36,13 +36,13 @@ response _ = do
     r1 <- Effect.requestJSON exampleGET
     r2 <- Effect.requestJSON examplePOST
     case (r1, r2) of
-        (Left _, Left _ ) -> Effect.logError "everything broke"
-        (Left _, _      ) -> Effect.logError "get failed"
-        (_     , Left _ ) -> Effect.logError "post failed"
-        (_     , Right v) -> Effect.logInfo (showText v)
+        (Left _, Left _) -> Effect.logError "serial requests: everything broke"
+        (Left _, _     ) -> Effect.logError "serial requests: GET failed"
+        (_     , Left _) -> Effect.logError "serial requests: POST failed"
+        _                -> Effect.logInfo "serial requests: ok"
 
     -- Fire a bunch of requests concurrently
-    _results <- Effect.runConcurrently
+    results <- Effect.runConcurrently
         [ Effect.requestJSON exampleGET
         , Effect.requestJSON exampleGET
         , Effect.requestJSON exampleGET
@@ -52,13 +52,19 @@ response _ = do
         , Effect.requestJSON exampleGET
         , Effect.requestJSON exampleGET
         ]
-    Effect.logInfo "concurrent requests done"
+    case sequence results of
+        Left  _ -> Effect.logError "async requests: failed"
+        Right _ -> Effect.logInfo "async requests: ok"
 
+    -- Read in a file
     cabal <- Effect.readFile "free-server.cabal"
     case cabal of
-        Left err ->
-            pure . plain500 $ ("error opening cabal file: " <> showText err)
-        Right contents -> pure . plain200 $ contents
+        Left  _ -> Effect.logError "file open: failed"
+        Right _ -> Effect.logInfo "file open: ok"
+
+
+    count <- Effect.getCounter
+    pure $ plain200 ("count is " <> showText count)
 
 
 -- | An example GET request.
@@ -80,14 +86,6 @@ examplePOST = req POST
 -- | Construct a plain text HTTP response (status 200).
 plain200 :: Text -> Response
 plain200 body = responseLBS
-    Http.status200
-    [(Http.hContentType, "text/plain; charset=utf-8")]
-    (encodeUtf8 body)
-
-
--- | Construct a plain text HTTP response (status 500).
-plain500 :: Text -> Response
-plain500 body = responseLBS
     Http.status200
     [(Http.hContentType, "text/plain; charset=utf-8")]
     (encodeUtf8 body)

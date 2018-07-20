@@ -9,11 +9,13 @@ where
 
 import           Prelude
 
+import           Control.Concurrent       (forkIO, threadDelay)
 import           Control.Concurrent.Async (mapConcurrently)
 import           Control.Exception        (IOException, try)
 import           Data.Default             (def)
 import           Data.IORef
     ( IORef
+    , atomicModifyIORef'
     , atomicWriteIORef
     , newIORef
     , readIORef
@@ -31,8 +33,17 @@ import           Control.Monad.Effect     (Effect(..), LogLevel(..))
 -- | Initialise a new 'Effect' interpreter.
 mkInterpreter :: IO (Effect a -> IO a)
 mkInterpreter = do
-    s <- State <$> newIORef 0 <*> newIORef Map.empty
-    pure (interpreter s)
+    counter   <- newIORef 0
+    _         <- forkIO (manageCounter counter)
+    fileCache <- newIORef Map.empty
+    pure (interpreter State {..})
+
+
+manageCounter :: IORef Int -> IO ()
+manageCounter ref = do
+    threadDelay 1000000
+    atomicModifyIORef' ref (\count -> (count + 1, ()))
+    manageCounter ref
 
 
 -- | A bunch of mutable things.

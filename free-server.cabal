@@ -10,8 +10,10 @@ build-type: Simple
 cabal-version: >=1.10
 
 executable server
-    main-is: Main.hs
-    hs-source-dirs: src
+    main-is:
+        Main.hs
+    hs-source-dirs:
+        src
     other-modules:
         Handler
         Control.Monad.Effect
@@ -24,9 +26,10 @@ executable server
         -Wincomplete-uni-patterns
         -Wredundant-constraints
     default-extensions:
-        NoImplicitPrelude
         LambdaCase
+        NoImplicitPrelude
         OverloadedStrings
+        RecordWildCards
     build-depends:
         base >=4.11 && <4.12,
         aeson,
