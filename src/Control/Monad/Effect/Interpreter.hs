@@ -9,22 +9,23 @@ where
 
 import           Prelude
 
-import           Control.Exception    (IOException, try)
-import           Data.Default         (def)
+import           Control.Concurrent.Async (mapConcurrently)
+import           Control.Exception        (IOException, try)
+import           Data.Default             (def)
 import           Data.IORef
     ( IORef
     , atomicWriteIORef
     , newIORef
     , readIORef
     )
-import           Data.Map             (Map)
-import qualified Data.Map             as Map
-import           Data.Text            (Text)
-import qualified Data.Text.IO         as Text
-import           Network.HTTP.Req     (responseBody, runReq)
-import           System.IO            (stderr)
+import           Data.Map                 (Map)
+import qualified Data.Map                 as Map
+import           Data.Text                (Text)
+import qualified Data.Text.IO             as Text
+import           Network.HTTP.Req         (responseBody, runReq)
+import           System.IO                (stderr)
 
-import           Control.Monad.Effect (Effect(..), LogLevel(..))
+import           Control.Monad.Effect     (Effect(..), LogLevel(..))
 
 
 -- | Initialise a new 'Effect' interpreter.
@@ -34,6 +35,7 @@ mkInterpreter = do
     pure (interpreter s)
 
 
+-- | A bunch of mutable things.
 data State = State
     { counter   :: IORef Int
     , fileCache :: IORef (Map FilePath Text)
@@ -64,6 +66,10 @@ interpreter s = interpret
         ReadFile path cont -> do
             result <- cachedReadFile path (fileCache s)
             interpret (cont result)
+
+        Concurrently effects cont -> do
+            results <- mapConcurrently (interpreter s) effects
+            interpret (cont results)
 
 
 cachedReadFile

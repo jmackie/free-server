@@ -32,6 +32,7 @@ import qualified Control.Monad.Effect as Effect
 
 response :: Request -> Effect Response
 response _ = do
+    -- Fire some request sequentially
     r1 <- Effect.requestJSON exampleGET
     r2 <- Effect.requestJSON examplePOST
     case (r1, r2) of
@@ -39,6 +40,19 @@ response _ = do
         (Left _, _      ) -> Effect.logError "get failed"
         (_     , Left _ ) -> Effect.logError "post failed"
         (_     , Right v) -> Effect.logInfo (showText v)
+
+    -- Fire a bunch of requests concurrently
+    _results <- Effect.runConcurrently
+        [ Effect.requestJSON exampleGET
+        , Effect.requestJSON exampleGET
+        , Effect.requestJSON exampleGET
+        , Effect.requestJSON exampleGET
+        , Effect.requestJSON exampleGET
+        , Effect.requestJSON exampleGET
+        , Effect.requestJSON exampleGET
+        , Effect.requestJSON exampleGET
+        ]
+    Effect.logInfo "concurrent requests done"
 
     cabal <- Effect.readFile "free-server.cabal"
     case cabal of

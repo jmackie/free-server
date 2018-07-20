@@ -1,3 +1,4 @@
+{-# LANGUAGE ExistentialQuantification #-}
 -- |
 -- Module      : Control.Monad.Effect
 -- Description : All the effects this server has
@@ -20,6 +21,9 @@ module Control.Monad.Effect
 
     -- * File System Interaction
     , readFile
+
+    -- * Meta Effects
+    , runConcurrently
     )
 where
 
@@ -40,6 +44,7 @@ data Effect a
     | Log LogLevel Text (Effect a)
     | GetCounter (Int -> Effect a)
     | ReadFile FilePath (Either IOException Text -> Effect a)
+    | forall b . Concurrently [Effect b] ([b] -> Effect a)
 
 
 -- | A Nicer synonym.
@@ -53,6 +58,10 @@ data LogLevel = Info | Error
 -- | Fire a JSON request.
 requestJSON :: Req JSON -> Effect (Either HttpException Aeson.Value)
 requestJSON req = RequestJSON req Pure
+
+
+runConcurrently :: [Effect b] -> Effect [b]
+runConcurrently effects = Concurrently effects Pure
 
 
 -- | Log an info message.
@@ -88,11 +97,12 @@ instance Functor Effect where
 
 mapEffect :: (a -> b) -> Effect a -> Effect b
 mapEffect f = \case
-    Pure a               -> Pure (f a)
-    RequestJSON req cont -> RequestJSON req (fmap f . cont)
-    Log level mesg next  -> Log level mesg (fmap f next)
-    GetCounter cont      -> GetCounter (fmap f . cont)
-    ReadFile path cont   -> ReadFile path (fmap f . cont)
+    Pure a                    -> Pure (f a)
+    RequestJSON req cont      -> RequestJSON req (fmap f . cont)
+    Log level mesg next       -> Log level mesg (fmap f next)
+    GetCounter cont           -> GetCounter (fmap f . cont)
+    ReadFile     path    cont -> ReadFile path (fmap f . cont)
+    Concurrently effects cont -> Concurrently effects (fmap f . cont)
 
 
 instance Applicative Effect where
@@ -103,11 +113,12 @@ instance Applicative Effect where
 effectApply :: Effect (a -> b) -> Effect a -> Effect b
 effectApply top e = go top
   where
-    go (Pure f              ) = fmap f e
-    go (RequestJSON req cont) = RequestJSON req (go . cont)
-    go (Log level mesg next ) = Log level mesg (go next)
-    go (GetCounter cont     ) = GetCounter (go . cont)
-    go (ReadFile path cont  ) = ReadFile path (go . cont)
+    go (Pure f                   ) = fmap f e
+    go (RequestJSON req cont     ) = RequestJSON req (go . cont)
+    go (Log level mesg next      ) = Log level mesg (go next)
+    go (GetCounter cont          ) = GetCounter (go . cont)
+    go (ReadFile     path    cont) = ReadFile path (go . cont)
+    go (Concurrently effects cont) = Concurrently effects (go . cont)
 
 
 instance Monad Effect where
@@ -118,8 +129,9 @@ instance Monad Effect where
 effectBind :: Effect a -> (a -> Effect b) -> Effect b
 effectBind top f = go top
   where
-    go (Pure a              ) = f a
-    go (RequestJSON req cont) = RequestJSON req (go . cont)
-    go (Log level mesg next ) = Log level mesg (go next)
-    go (GetCounter cont     ) = GetCounter (go . cont)
-    go (ReadFile path cont  ) = ReadFile path (go . cont)
+    go (Pure a                   ) = f a
+    go (RequestJSON req cont     ) = RequestJSON req (go . cont)
+    go (Log level mesg next      ) = Log level mesg (go next)
+    go (GetCounter cont          ) = GetCounter (go . cont)
+    go (ReadFile     path    cont) = ReadFile path (go . cont)
+    go (Concurrently effects cont) = Concurrently effects (go . cont)
