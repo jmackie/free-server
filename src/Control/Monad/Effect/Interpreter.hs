@@ -62,7 +62,7 @@ interpreter s = interpret
 
         RequestJSON req cont -> do
             result <- try (runReq def req)
-            interpreter s (cont (responseBody <$> result))
+            interpret (cont (responseBody <$> result))
 
         Log level mesg next -> do
             case level of
