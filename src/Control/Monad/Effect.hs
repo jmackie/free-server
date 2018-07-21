@@ -1,4 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE LambdaCase                #-}
 -- |
 -- Module      : Control.Monad.Effect
 -- Description : All the effects this server has
@@ -9,7 +11,6 @@ module Control.Monad.Effect
     -- * HTTP Requests
     , JSON
     , requestJSON
-
 
     -- * Stateful Stuff
     , getCounter
@@ -31,6 +32,7 @@ import           Prelude           hiding (log, readFile)
 
 import           Control.Exception (IOException)
 import qualified Data.Aeson        as Aeson
+import           Data.Kind         (Type)
 import           Data.Text         (Text)
 import           Network.HTTP.Req  (HttpException, JsonResponse, Req)
 
@@ -38,13 +40,13 @@ import           Network.HTTP.Req  (HttpException, JsonResponse, Req)
 -- | All the effects this server relies on.
 --
 -- Note that you should only use the value constructors for creating an interpreter.
-data Effect a
-    = Pure a
-    | RequestJSON (Req JSON) (Either HttpException Aeson.Value -> Effect a)
-    | Log LogLevel Text (Effect a)
-    | GetCounter (Int -> Effect a)
-    | ReadFile FilePath (Either IOException Text -> Effect a)
-    | forall b . Concurrently [Effect b] ([b] -> Effect a)
+data Effect (result :: Type)
+    = Pure result
+    | RequestJSON (Req JSON) (Either HttpException Aeson.Value -> Effect result)
+    | Log LogLevel Text (Effect result)
+    | GetCounter (Int -> Effect result)
+    | ReadFile FilePath (Either IOException Text -> Effect result)
+    | forall b . Concurrently [Effect b] ([b] -> Effect result)
 
 
 -- | A Nicer synonym.
@@ -91,47 +93,35 @@ readFile path = ReadFile path Pure
 {- INSTANCE BOILERPLATE -}
 
 
+mapEffect :: (a -> b) -> Effect a -> Effect b
+mapEffect f = \case
+    Pure a                    -> Pure (f a)
+    RequestJSON req cont      -> RequestJSON req (mapEffect f . cont)
+    Log level mesg next       -> Log level mesg (mapEffect f next)
+    GetCounter cont           -> GetCounter (mapEffect f . cont)
+    ReadFile     path    cont -> ReadFile path (mapEffect f . cont)
+    Concurrently effects cont -> Concurrently effects (mapEffect f . cont)
+
+
+extendEffect :: (a -> Effect b) -> Effect a -> Effect b
+extendEffect f = \case
+    Pure a                    -> f a
+    RequestJSON req cont      -> RequestJSON req (extendEffect f . cont)
+    Log level mesg next       -> Log level mesg (extendEffect f next)
+    GetCounter cont           -> GetCounter (extendEffect f . cont)
+    ReadFile     path    cont -> ReadFile path (extendEffect f . cont)
+    Concurrently effects cont -> Concurrently effects (extendEffect f . cont)
+
+
 instance Functor Effect where
     fmap = mapEffect
 
 
-mapEffect :: (a -> b) -> Effect a -> Effect b
-mapEffect f = \case
-    Pure a                    -> Pure (f a)
-    RequestJSON req cont      -> RequestJSON req (fmap f . cont)
-    Log level mesg next       -> Log level mesg (fmap f next)
-    GetCounter cont           -> GetCounter (fmap f . cont)
-    ReadFile     path    cont -> ReadFile path (fmap f . cont)
-    Concurrently effects cont -> Concurrently effects (fmap f . cont)
-
-
 instance Applicative Effect where
     pure = Pure
-    (<*>) = effectApply
-
-
-effectApply :: Effect (a -> b) -> Effect a -> Effect b
-effectApply top e = go top
-  where
-    go (Pure f                   ) = fmap f e
-    go (RequestJSON req cont     ) = RequestJSON req (go . cont)
-    go (Log level mesg next      ) = Log level mesg (go next)
-    go (GetCounter cont          ) = GetCounter (go . cont)
-    go (ReadFile     path    cont) = ReadFile path (go . cont)
-    go (Concurrently effects cont) = Concurrently effects (go . cont)
+    ef <*> e = extendEffect (\f -> fmap f e) ef
 
 
 instance Monad Effect where
     return = pure
-    (>>=) = effectBind
-
-
-effectBind :: Effect a -> (a -> Effect b) -> Effect b
-effectBind top f = go top
-  where
-    go (Pure a                   ) = f a
-    go (RequestJSON req cont     ) = RequestJSON req (go . cont)
-    go (Log level mesg next      ) = Log level mesg (go next)
-    go (GetCounter cont          ) = GetCounter (go . cont)
-    go (ReadFile     path    cont) = ReadFile path (go . cont)
-    go (Concurrently effects cont) = Concurrently effects (go . cont)
+    (>>=) = flip extendEffect
